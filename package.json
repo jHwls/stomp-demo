@@ -1,5 +1,5 @@
 {
-  "name": "with-stomp",
+  "name": "stomp-demo",
   "version": "1.0.0",
   "scripts": {
     "dev": "next",
@@ -7,10 +7,12 @@
     "start": "next start"
   },
   "dependencies": {
+    "@stomp/rx-stomp": "^1.0.2",
     "@stomp/stompjs": "^5.4.2",
     "next": "latest",
     "react": "^16.7.0",
-    "react-dom": "^16.7.0"
+    "react-dom": "^16.7.0",
+    "rxjs": "^6.6.6"
   },
   "license": "MIT"
 }
