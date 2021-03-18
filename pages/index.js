@@ -1,4 +1,5 @@
 import { Client } from "@stomp/stompjs";
+import React from "react";
 
 const config = {
   debug: function (str) {
@@ -11,7 +12,7 @@ const config = {
   brokerURL: process.env.NEXT_PUBLIC_STOMP_SERVER + process.env.NEXT_PUBLIC_JWT
 };
 
-const initialState = { messages: [] };
+const initialState = { messages: [], subscriptions: [] };
 
 function reducer(state, action) {
   switch (action.messageType) {
@@ -27,18 +28,48 @@ function reducer(state, action) {
       };
     }
     case "A": {
-      const messages = checkDuplicates([
-        prepare(action.data),
-        ...state.messages
-      ]);
+      if (action.data[0] === "Q") {
+        const messages = checkDuplicates([
+          prepare(action.data),
+          ...state.messages
+        ]);
+
+        return {
+          ...state,
+          messages
+        };
+      } else {
+        return state;
+      }
+    }
+    case "SUBSCRIBE": {
+      return {
+        ...state,
+        subscriptions: {
+          ...state.subscriptions,
+          [action.ticker]: action.subscription
+        }
+      };
+    }
+    case "UNSUBSCRIBE":
+      if (!state.subscriptions[action.ticker]?.unsubscribe) return state;
+
+      state.subscriptions[action.ticker].unsubscribe();
+
+      const {
+        [action.ticker]: v,
+        ...remainingSubscriptions
+      } = state.subscriptions;
 
       return {
         ...state,
-        messages
+        subscriptions: remainingSubscriptions
       };
-    }
     case "CLEAR":
-      return initialState;
+      return {
+        ...state,
+        messages: []
+      };
     default:
       return state;
   }
@@ -83,17 +114,14 @@ function checkDuplicates(messages) {
 const Index = () => {
   const [status, setStatus] = React.useState("DISCONNECTED");
   const [ws, setWs] = React.useState(null);
-  const [subId, setSubId] = React.useState(null);
-  const [tickers, setTickers] = React.useState(["SPLK", "CSCO"]);
 
-  const [{ messages }, dispatch] = React.useReducer(reducer, initialState);
+  const [{ messages, subscriptions }, dispatch] = React.useReducer(
+    reducer,
+    initialState
+  );
 
   const messageCallback = (message) => {
     const obj = JSON.parse(message.body);
-    // console.log("RECEIVING MSG", obj);
-    if (obj.data?.subscriptionId) {
-      setSubId(obj.data.subscriptionId);
-    }
 
     dispatch(obj);
   };
@@ -108,17 +136,19 @@ const Index = () => {
 
     ws.onConnect = function (frame) {
       setStatus("CONNECTED");
+      ["SPY", "QQQ", "IWM"].forEach((t) => {
+        const subscription = ws.subscribe("/topic/iex/" + t, messageCallback);
 
-      ws.subscribe("/user/topic/iex", messageCallback);
-
-      ws.publish({
-        destination: "/app/iex",
-        body: JSON.stringify({ action: "load", symbols: tickers })
+        dispatch({
+          messageType: "SUBSCRIBE",
+          subscription: subscription,
+          ticker: t
+        });
       });
+      // setTimeout(() => ws.deactivate(), 60_000);
     };
 
     ws.onDisconnect = function () {
-      setSubId(null);
       setStatus("DISCONNECTED");
     };
 
@@ -144,10 +174,28 @@ const Index = () => {
     };
   }, []);
 
+  React.useEffect(() => {}, []);
+
   function activate() {
     if (!ws) return;
 
     ws.activate();
+  }
+
+  function subscribe(tickerList) {
+    if (!ws) return;
+
+    tickerList.forEach((t) => {
+      if (subscriptions[t]) return;
+
+      const subscription = ws.subscribe("/topic/iex/" + t, messageCallback);
+
+      dispatch({
+        messageType: "SUBSCRIBE",
+        subscription: subscription,
+        ticker: t
+      });
+    });
   }
 
   function deactivate() {
@@ -160,21 +208,23 @@ const Index = () => {
     dispatch({ messageType: "CLEAR" });
   }
 
-  function subscribe(e) {
+  function handleSubscribe(e) {
     e.preventDefault();
 
-    console.log(e);
+    const data = new FormData(e.target);
 
-    if (!ws) return;
+    const tickerList = data
+      .get("tickers")
+      .split(/[^\w]/)
+      .filter((s) => s != "");
 
-    ws.publish({
-      destination: "/app/iex",
-      body: JSON.stringify({
-        action: "subscribe",
-        symbols: [e.target.event],
-        subscriptionId: subId
-      })
-    });
+    subscribe(tickerList);
+  }
+
+  function handleUnsubscribe(t) {
+    if (!t) return;
+
+    dispatch({ messageType: "UNSUBSCRIBE", ticker: t });
   }
 
   return (
@@ -195,19 +245,18 @@ const Index = () => {
       </ul>
       <div style={{ flexBasis: "50%" }}>
         <h1>Status: {status}</h1>
-        <h2>
-          {subId
-            ? `Subscribed as #${subId} to: ${tickers.join(", ")}`
-            : "Connect to subscribe"}
-        </h2>
         <button onClick={activate}>Connect</button>
         <button onClick={deactivate}>Disconnect</button>
         <button onClick={clear}>Clear</button>
-        <form onSubmit={subscribe}>
-          <input type="text"></input>
+        <form onSubmit={handleSubscribe}>
+          <input type="text" name="tickers"></input>
           <button type="submit">Subscribe</button>
         </form>
-        {}
+        {Object.keys(subscriptions).map((t) => (
+          <button type="button" onClick={() => handleUnsubscribe(t)}>
+            Unsubscribe {t}
+          </button>
+        ))}
       </div>
     </div>
   );
