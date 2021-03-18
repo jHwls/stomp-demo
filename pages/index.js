@@ -4,9 +4,9 @@ const config = {
   debug: function (str) {
     // console.log(str);
   },
-  reconnectDelay: 5000,
-  heartbeatIncoming: 4000,
-  heartbeatOutgoing: 4000,
+  reconnectDelay: 5_000,
+  heartbeatIncoming: 10_000,
+  heartbeatOutgoing: 10_000,
   discardWebsocketOnCommFailure: true,
   brokerURL: process.env.NEXT_PUBLIC_STOMP_SERVER + process.env.NEXT_PUBLIC_JWT
 };
